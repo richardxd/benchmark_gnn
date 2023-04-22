@@ -19,15 +19,17 @@ def train_epoch_sparse(model, optimizer, device, data_loader, epoch):
     epoch_train_f1 = 0
     nb_data = 0
     gpu_mem = 0
-    for iter, (batch_graphs, batch_labels) in enumerate(data_loader):
+    for iter, (batch_graphs, batch_labels, batch_tour_len) in enumerate(data_loader):
         batch_graphs = batch_graphs.to(device)
         batch_x = batch_graphs.ndata['feat'].to(device)  # num x feat
         batch_e = batch_graphs.edata['feat'].to(device)
+        
         batch_labels = batch_labels.to(device)
+        batch_tour_len = batch_tour_len.to(device)
         optimizer.zero_grad()
         
-        batch_scores = model.forward(batch_graphs, batch_x, batch_e)
-        loss = model.loss(batch_scores, batch_labels)
+        batch_scores, batch_pred_tour_len = model.forward(batch_graphs, batch_x, batch_e)
+        loss = model.loss(batch_scores, batch_labels, batch_tour_len, batch_pred_tour_len)
         loss.backward()
         optimizer.step()
         epoch_loss += loss.detach().item()
@@ -45,14 +47,15 @@ def evaluate_network_sparse(model, device, data_loader, epoch):
     epoch_test_f1 = 0
     nb_data = 0
     with torch.no_grad():
-        for iter, (batch_graphs, batch_labels) in enumerate(data_loader):
+        for iter, (batch_graphs, batch_labels, batch_tour_len) in enumerate(data_loader):
             batch_graphs = batch_graphs.to(device)
             batch_x = batch_graphs.ndata['feat'].to(device)
             batch_e = batch_graphs.edata['feat'].to(device)
             batch_labels = batch_labels.to(device)
+            batch_tour_len = batch_tour_len.to(device)
 
-            batch_scores = model.forward(batch_graphs, batch_x, batch_e)
-            loss = model.loss(batch_scores, batch_labels) 
+            batch_scores, batch_pred_tour_len = model.forward(batch_graphs, batch_x, batch_e)
+            loss = model.loss(batch_scores, batch_labels, batch_tour_len, batch_pred_tour_len) 
             epoch_test_loss += loss.detach().item()
             epoch_test_f1 += binary_f1_score(batch_scores, batch_labels)
         epoch_test_loss /= (iter + 1)

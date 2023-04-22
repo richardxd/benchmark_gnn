@@ -5,7 +5,7 @@ from data.superpixels import SuperPixDataset
 from data.molecules import MoleculeDataset
 from data.TUs import TUsDataset
 from data.SBMs import SBMsDataset
-from data.TSP import TSPDataset
+from data.TSP import TSPDataset, TSPDatasetDGL
 from data.COLLAB import COLLABDataset
 from data.CSL import CSLDataset
 from data.cycles import CyclesDataset
@@ -40,6 +40,7 @@ def LoadData(DATASET_NAME):
     # handling for TSP dataset
     if DATASET_NAME == 'TSP':
         return TSPDataset(DATASET_NAME)
+        # return TSPDatasetDGL(DATASET_NAME)
 
     # handling for COLLAB dataset
     if DATASET_NAME == 'OGBL-COLLAB':

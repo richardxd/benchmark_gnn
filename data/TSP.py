@@ -10,6 +10,7 @@ from torch.utils.data import Dataset
 
 
 class TSP(Dataset):
+    print("invoked!!!!!!!!!!!!!!!!!")
     def __init__(self, data_dir, split="train", num_neighbors=25, max_samples=10000):    
         self.data_dir = data_dir
         self.split = split
@@ -20,6 +21,7 @@ class TSP(Dataset):
         
         self.graph_lists = []
         self.edge_labels = []
+        self.tour_len = []
         self._prepare()
         self.n_samples = len(self.edge_labels)
     
@@ -47,16 +49,22 @@ class TSP(Dataset):
             tour_nodes = [int(node) - 1 for node in line[line.index('output') + 1:-1]][:-1]
 
             # Compute an edge adjacency matrix representation of tour
+
+            # UPDATE: also compute the tour length
+            tour_len = 0
+
             edges_target = np.zeros((num_nodes, num_nodes))
             for idx in range(len(tour_nodes) - 1):
                 i = tour_nodes[idx]
                 j = tour_nodes[idx + 1]
                 edges_target[i][j] = 1
                 edges_target[j][i] = 1
+                tour_len += W_val[i][j]
             # Add final connection of tour in edge target
             edges_target[j][tour_nodes[0]] = 1
             edges_target[tour_nodes[0]][j] = 1
-            
+            tour_len += W_val[j][tour_nodes[0]]
+             
             # Construct the DGL graph
             g = dgl.DGLGraph()
             g.add_nodes(num_nodes)
@@ -79,17 +87,35 @@ class TSP(Dataset):
             
             # Add edge features
             g.edata['feat'] = torch.Tensor(edge_feats).unsqueeze(-1)
-            
+
+
+            # Add tour length as a feature
+            g.edata['tour_length']  = tour_len
+            print(g.edata['tour_length'])
+            # g.set_g_repr({"tour_length:" : tour_len})
             # # Uncomment to add dummy edge features instead (for Residual Gated ConvNet)
             # edge_feat_dim = g.ndata['feat'].shape[1] # dim same as node feature dim
             # g.edata['feat'] = torch.ones(g.number_of_edges(), edge_feat_dim)
             
             self.graph_lists.append(g)
             self.edge_labels.append(edge_labels)
+        print("successfully added tour length!")
 
     def __len__(self):
         """Return the number of graphs in the dataset."""
         return self.n_samples
+
+    def compute_tour_len(self, idx):
+        g = self.graph_lists[idx]
+        edge_labels = self.edge_labels[idx]
+        edge_feat = g.edata['feat']
+        tour_len = 0
+        edge_feat = edge_feat.squeeze(-1)
+        for i in range(len(edge_labels)):
+            if edge_labels[i] == 1:
+                tour_len += edge_feat[i]
+        tour_len /= 2
+        return tour_len
 
     def __getitem__(self, idx):
         """
@@ -104,7 +130,16 @@ class TSP(Dataset):
                 DGLGraph with node feature stored in `feat` field
                 And a list of labels for each edge in the DGLGraph.
         """
-        return self.graph_lists[idx], self.edge_labels[idx]
+        # if tour_len has not been computed
+        if not hasattr(self, 'tour_len'):
+            self.tour_len = []
+            for i in range(len(self.graph_lists)):
+                self.tour_len.append(float(self.compute_tour_len(i)))
+            # print(self.tour_len[0:20])
+            self.tour_len = torch.tensor(self.tour_len)
+        return self.graph_lists[idx], self.edge_labels[idx], self.tour_len[idx]
+        
+        
 
 
 class TSPDatasetDGL(Dataset):
@@ -133,7 +168,7 @@ class TSPDataset(Dataset):
     # form a mini batch from a given list of samples = [(graph, label) pairs]
     def collate(self, samples):
         # The input samples is a list of pairs (graph, label).
-        graphs, labels = map(list, zip(*samples))
+        graphs, labels, tour_len = map(list, zip(*samples))
         # Edge classification labels need to be flattened to 1D lists
         labels = torch.LongTensor(np.array(list(itertools.chain(*labels))))
         #tab_sizes_n = [ graphs[i].number_of_nodes() for i in range(len(graphs))]
@@ -143,8 +178,8 @@ class TSPDataset(Dataset):
         #tab_snorm_e = [ torch.FloatTensor(size,1).fill_(1./float(size)) for size in tab_sizes_e ]
         #snorm_e = torch.cat(tab_snorm_e).sqrt()
         batched_graph = dgl.batch(graphs)
-
-        return batched_graph, labels
+        tour_len = torch.tensor(tour_len)
+        return batched_graph, labels, tour_len
     
     
     # prepare dense tensors for GNNs using them; such as RingGNN, 3WLGNN
